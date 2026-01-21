@@ -1,2 +1,1 @@
-python-telegram-bot[job-queue]==20.7
-filetype==1.2.0
+python-telegram-bot[job-queue]==13.15
