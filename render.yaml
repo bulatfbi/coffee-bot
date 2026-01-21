@@ -1,5 +1,5 @@
 services:
-  - type: Background Worker
+  - type: web
     name: coffee-duty-bot
     env: python
     region: frankfurt
