@@ -5,8 +5,9 @@ import random
 from datetime import datetime, time
 import asyncio
 
-import psycopg2
-from psycopg2 import pool
+# Используем psycopg3 вместо psycopg2
+import psycopg
+from psycopg_pool import ConnectionPool
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -36,7 +37,7 @@ if not BOT_TOKEN:
     logger.error("❌ BOT_TOKEN не установлен!")
     sys.exit(1)
 
-# Пул соединений
+# Пул соединений для psycopg3
 db_pool = None
 
 def init_database():
@@ -44,73 +45,69 @@ def init_database():
     global db_pool
     
     try:
-        db_pool = psycopg2.pool.SimpleConnectionPool(
-            1, 20, DATABASE_URL, sslmode='require'
+        # Создаем пул соединений для psycopg3
+        db_pool = ConnectionPool(
+            DATABASE_URL,
+            min_size=1,
+            max_size=20,
+            kwargs={"sslmode": "require"}  # SSL для Render
         )
         
-        conn = db_pool.getconn()
-        cursor = conn.cursor()
+        # Проверяем соединение и создаем таблицу
+        with db_pool.connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS users (
+                        user_id BIGINT PRIMARY KEY,
+                        name TEXT,
+                        chastota TEXT,
+                        count_1 INTEGER DEFAULT 0,
+                        count_2 INTEGER DEFAULT 0,
+                        wait_1 INTEGER DEFAULT 0,
+                        wait_2 INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                conn.commit()
         
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                name TEXT,
-                chastota TEXT,
-                count_1 INTEGER DEFAULT 0,
-                count_2 INTEGER DEFAULT 0,
-                wait_1 INTEGER DEFAULT 0,
-                wait_2 INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        conn.commit()
-        db_pool.putconn(conn)
-        logger.info("✅ База данных инициализирована")
+        logger.info("✅ База данных PostgreSQL (psycopg3) инициализирована")
         
     except Exception as e:
         logger.error(f"❌ Ошибка инициализации БД: {e}")
         sys.exit(1)
 
 def execute_query(query, params=(), fetchone=False, fetchall=False, commit=False):
-    """Универсальная функция выполнения запросов"""
-    conn = None
+    """Универсальная функция выполнения запросов для psycopg3"""
     try:
-        conn = db_pool.getconn()
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        
-        if commit:
-            conn.commit()
-        
-        if fetchone:
-            result = cursor.fetchone()
-        elif fetchall:
-            result = cursor.fetchall()
-        else:
-            result = None
-            
-        return result
-        
+        with db_pool.connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                
+                if commit:
+                    conn.commit()
+                
+                if fetchone:
+                    result = cursor.fetchone()
+                elif fetchall:
+                    result = cursor.fetchall()
+                else:
+                    result = None
+                    
+                return result
+                
     except Exception as e:
         logger.error(f"❌ Ошибка выполнения запроса: {e}")
-        if conn:
-            conn.rollback()
         return None
-        
-    finally:
-        if conn:
-            db_pool.putconn(conn)
 
 # Функции БД
-def get_user_data(user_id):
+def get_user_data(user_id: int):
     return execute_query(
         'SELECT * FROM users WHERE user_id = %s',
         (user_id,),
         fetchone=True
     )
 
-def update_user(user_id, **kwargs):
+def update_user(user_id: int, **kwargs):
     for key, value in kwargs.items():
         execute_query(
             f'UPDATE users SET {key} = %s WHERE user_id = %s',
@@ -118,14 +115,14 @@ def update_user(user_id, **kwargs):
             commit=True
         )
 
-def delete_user(user_id):
+def delete_user(user_id: int):
     execute_query(
         'DELETE FROM users WHERE user_id = %s',
         (user_id,),
         commit=True
     )
 
-def create_user(user_id):
+def create_user(user_id: int):
     if not get_user_data(user_id):
         execute_query(
             '''INSERT INTO users (user_id, count_1, count_2, wait_1, wait_2)
@@ -356,10 +353,13 @@ async def daily_21_job(context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Основная функция"""
+    # Инициализация базы данных
     init_database()
     
+    # Создание приложения
     application = Application.builder().token(BOT_TOKEN).build()
     
+    # Настройка ConversationHandler
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -377,12 +377,21 @@ def main():
     job_queue = application.job_queue
     
     if job_queue:
-        # 14:00 UTC (время можно изменить)
-        job_queue.run_daily(daily_14_job, time=time(hour=14, minute=0), days=(0,1,2,3,4))
-        # 21:00 UTC
-        job_queue.run_daily(daily_21_job, time=time(hour=21, minute=0), days=(0,1,2,3,4))
+        # 14:00 UTC (понедельник-пятница)
+        job_queue.run_daily(
+            daily_14_job, 
+            time=time(hour=14, minute=0), 
+            days=(0, 1, 2, 3, 4)  # Пн-Пт
+        )
+        # 21:00 UTC (понедельник-пятница)
+        job_queue.run_daily(
+            daily_21_job, 
+            time=time(hour=21, minute=0), 
+            days=(0, 1, 2, 3, 4)  # Пн-Пт
+        )
     
     # Запуск бота
+    logger.info("✅ Бот запускается...")
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
