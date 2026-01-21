@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coffee-bot"
+version = "1.0.0"
+dependencies = [
+    "python-telegram-bot[job-queue]==20.7",
+    "psycopg-binary==2.9.9",
+]
