@@ -2,7 +2,7 @@ services:
   - type: web
     name: coffee-bot
     env: python
-    region: oregon  # Или frankfurt, если вы в Европе
+    region: oregon
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
