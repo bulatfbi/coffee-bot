@@ -2,11 +2,10 @@ services:
   - type: web
     name: coffee-bot
     env: python
+    region: oregon  # Или frankfurt, если вы в Европе
     plan: free
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
     envVars:
       - key: BOT_TOKEN
-        sync: false
-      - key: DATABASE_URL
         sync: false
