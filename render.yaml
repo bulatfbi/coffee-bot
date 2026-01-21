@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: coffee-duty-bot
+    env: python
+    region: frankfurt  # Или oregon для США
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
