@@ -4,18 +4,18 @@
 """
 ☕ Coffee Duty Bot для Telegram
 Работает на Render.com с Python 3.13 и SQLite
-Полностью соответствует ТЗ
+Использует старый API (Updater) для совместимости
 """
 
 import os
 import sys
 import logging
 import random
-import asyncio
 import sqlite3
 import threading
+import time as tm
 from datetime import datetime, time
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 
 # =========== ПАТЧ ДЛЯ ПРОБЛЕМ С IMGHDR В PYTHON 3.13 ===========
 try:
@@ -52,16 +52,11 @@ except ImportError:
     import imghdr
 # ===========================================
 
+# Импорты для python-telegram-bot 13.x
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application,
-    CommandHandler,
-    CallbackQueryHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
-    ConversationHandler,
-    JobQueue,
+    Updater, CommandHandler, CallbackQueryHandler,
+    MessageHandler, Filters, ConversationHandler, JobQueue
 )
 
 # =========== НАСТРОЙКА ЛОГИРОВАНИЯ ===========
@@ -104,8 +99,7 @@ def init_database():
                 count_2 INTEGER DEFAULT 0,
                 wait_1 INTEGER DEFAULT 0,
                 wait_2 INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
@@ -182,7 +176,7 @@ def update_user(user_id: int, **kwargs):
     """Обновить данные пользователя"""
     for key, value in kwargs.items():
         execute_query(
-            f'UPDATE users SET {key} = ?, last_updated = CURRENT_TIMESTAMP WHERE user_id = ?',
+            f'UPDATE users SET {key} = ? WHERE user_id = ?',
             (value, user_id),
             commit=True
         )
@@ -325,8 +319,8 @@ def script_5():
     )
     logger.info("✅ Скрипт_5: Уход домой неполнозанятых")
 
-async def script_6(context: ContextTypes.DEFAULT_TYPE):
-    """Скрипт_6 (информирование)"""
+def script_6(bot):
+    """Скрипт_6 (информирование) - старый стиль"""
     duty = get_duty_user()
     
     if duty:
@@ -335,7 +329,7 @@ async def script_6(context: ContextTypes.DEFAULT_TYPE):
         
         for user_id in active_users:
             try:
-                await context.bot.send_message(
+                bot.send_message(
                     chat_id=user_id,
                     text=f"☕ Сегодня дежурный: {duty_name if duty_name else f'Пользователь {duty_user_id}'}"
                 )
@@ -345,7 +339,7 @@ async def script_6(context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"✅ Скрипт_6: Уведомления отправлены {len(active_users)} пользователям")
 
 # =========== ОБРАБОТЧИКИ КОМАНД И ДИАЛОГОВ ===========
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def start(update: Update, context):
     """Экран 'Стартовый': создает запись в БД"""
     user_id = update.effective_user.id
     
@@ -353,13 +347,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     create_user(user_id)
     
     # Переход на экран "Регистрация"
-    await update.message.reply_text(
+    update.message.reply_text(
         "👋 Добро пожаловать!\n\n"
         "Введите ваше имя, оно будет видно всем пользователям, когда будет назначаться дежурный:"
     )
     return REGISTRATION
 
-async def registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def registration(update: Update, context):
     """Экран 'Регистрация': ввод имени"""
     user_id = update.effective_user.id
     name = update.message.text.strip()
@@ -377,16 +371,16 @@ async def registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
+    update.message.reply_text(
         "☕ Как часто вы пьете кофе?",
         reply_markup=reply_markup
     )
     return POLL
 
-async def poll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def poll_handler(update: Update, context):
     """Экран 'Опрос': выбор частоты употребления кофе"""
     query = update.callback_query
-    await query.answer()
+    query.answer()
     
     user_id = update.effective_user.id
     data = query.data
@@ -394,7 +388,7 @@ async def poll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if data == 'no_coffee':
         # УДАЛЯЕТ ВСЕ ДАННЫЕ ИЗ ТАБЛИЦЫ
         delete_user(user_id)
-        await query.edit_message_text(
+        query.edit_message_text(
             "🗑️ Ваши данные удалены.\n\n"
             "Чтобы начать заново, нажмите /start"
         )
@@ -413,7 +407,7 @@ async def poll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        query.edit_message_text(
             "✅ Теперь вам будет приходить уведомления кто сегодня дежурный",
             reply_markup=reply_markup
         )
@@ -431,16 +425,16 @@ async def poll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        query.edit_message_text(
             "⏰ Когда вы придете, отметьтесь",
             reply_markup=reply_markup
         )
         return RARE_COFFEE
 
-async def main_coffee_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def main_coffee_handler(update: Update, context):
     """Экран 'Главные кофеманы'"""
     query = update.callback_query
-    await query.answer()
+    query.answer()
     
     user_id = update.effective_user.id
     data = query.data
@@ -448,32 +442,32 @@ async def main_coffee_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if data == 'temp_no_coffee':
         # Присваивает 1 в wait_1
         update_user(user_id, wait_1=1)
-        await context.bot.send_message(
+        context.bot.send_message(
             chat_id=user_id,
             text="⏸️ Когда вы вернетесь отметьте это"
         )
-        await query.edit_message_text("✅ Вы отметили временное отсутствие")
+        query.edit_message_text("✅ Вы отметили временное отсутствие")
         
     elif data == 'cant_duty':
         # Присваивает 1 в wait_2 и 0 в count_2
         update_user(user_id, wait_2=1, count_2=0)
-        await context.bot.send_message(
+        context.bot.send_message(
             chat_id=user_id,
             text="😔 Печалька"
         )
         # Запускаем Скрипт_2 и скрипт_6
         script_2()
-        await script_6(context)
-        await query.edit_message_text("✅ Отказ от дежурства учтен")
+        script_6(context.bot)
+        query.edit_message_text("✅ Отказ от дежурства учтен")
         
     elif data == 'returned':
         # Присваивает 0 в wait_1
         update_user(user_id, wait_1=0)
-        await context.bot.send_message(
+        context.bot.send_message(
             chat_id=user_id,
             text="🎉 Ура!"
         )
-        await query.edit_message_text("✅ Вы вернулись!")
+        query.edit_message_text("✅ Вы вернулись!")
         
     elif data == 'change_habit':
         # Переход на экран "Опрос"
@@ -486,7 +480,7 @@ async def main_coffee_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        query.edit_message_text(
             "☕ Как часто вы пьете кофе?",
             reply_markup=reply_markup
         )
@@ -494,10 +488,10 @@ async def main_coffee_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     return MAIN_COFFEE
 
-async def rare_coffee_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def rare_coffee_handler(update: Update, context):
     """Экран 'Редкие кофеманы'"""
     query = update.callback_query
-    await query.answer()
+    query.answer()
     
     user_id = update.effective_user.id
     data = query.data
@@ -508,23 +502,23 @@ async def rare_coffee_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         current_count = user['count_1'] if user else 0
         update_user(user_id, count_1=current_count + 1, wait_1=0)
         
-        await context.bot.send_message(
+        context.bot.send_message(
             chat_id=user_id,
             text="✅ Спасибо"
         )
-        await query.edit_message_text("✅ Ваше присутствие отмечено")
+        query.edit_message_text("✅ Ваше присутствие отмечено")
         
     elif data == 'cant_duty_rare':
         # Присваивает 1 в wait_2 и 0 в count_2
         update_user(user_id, wait_2=1, count_2=0)
-        await context.bot.send_message(
+        context.bot.send_message(
             chat_id=user_id,
             text="😔 Печалька"
         )
         # Запускаем Скрипт_2 и скрипт_6
         script_2()
-        await script_6(context)
-        await query.edit_message_text("✅ Отказ от дежурства учтен")
+        script_6(context.bot)
+        query.edit_message_text("✅ Отказ от дежурства учтен")
         
     elif data == 'change_habit_rare':
         # Переход на экран "Опрос"
@@ -537,7 +531,7 @@ async def rare_coffee_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        query.edit_message_text(
             "☕ Как часто вы пьете кофе?",
             reply_markup=reply_markup
         )
@@ -545,25 +539,25 @@ async def rare_coffee_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     return RARE_COFFEE
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def cancel(update: Update, context):
     """Отмена диалога"""
-    await update.message.reply_text(
+    update.message.reply_text(
         "❌ Действие отменено. Используйте /start для начала."
     )
     return ConversationHandler.END
 
 # =========== СКРЫТЫЕ КОМАНДЫ ===========
-async def hollidaon(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def hollidaon(update: Update, context):
     """Скрытая команда: отключить работу скриптов по времени"""
     set_scripts_enabled(False)
-    await update.message.reply_text("✅ Работа скриптов по времени ОТКЛЮЧЕНА")
+    update.message.reply_text("✅ Работа скриптов по времени ОТКЛЮЧЕНА")
 
-async def hollidayoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def hollidayoff(update: Update, context):
     """Скрытая команда: включить работу скриптов по времени"""
     set_scripts_enabled(True)
-    await update.message.reply_text("✅ Работа скриптов по времени ВКЛЮЧЕНА")
+    update.message.reply_text("✅ Работа скриптов по времени ВКЛЮЧЕНА")
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def status(update: Update, context):
     """Показать статус пользователя"""
     user = get_user_data(update.effective_user.id)
     
@@ -585,46 +579,46 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         status_msg = "❌ Вы не зарегистрированы. Используйте /start"
     
-    await update.message.reply_text(status_msg)
+    update.message.reply_text(status_msg)
 
-async def run_script(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def run_script(update: Update, context):
     """Запустить скрипт вручную (для тестирования)"""
     if context.args:
         script_num = context.args[0]
         if script_num == '1':
             script_1()
-            await update.message.reply_text("✅ Скрипт_1 (прирост кофе) выполнен")
+            update.message.reply_text("✅ Скрипт_1 (прирост кофе) выполнен")
         elif script_num == '2':
             script_2()
-            await update.message.reply_text("✅ Скрипт_2 (поиск дежурного) выполнен")
+            update.message.reply_text("✅ Скрипт_2 (поиск дежурного) выполнен")
         elif script_num == '3':
             script_3()
-            await update.message.reply_text("✅ Скрипт_3 (обнуление Печальки) выполнен")
+            update.message.reply_text("✅ Скрипт_3 (обнуление Печальки) выполнен")
         elif script_num == '4':
             script_4()
-            await update.message.reply_text("✅ Скрипт_4 (погашение дежурства) выполнен")
+            update.message.reply_text("✅ Скрипт_4 (погашение дежурства) выполнен")
         elif script_num == '5':
             script_5()
-            await update.message.reply_text("✅ Скрипт_5 (уход домой) выполнен")
+            update.message.reply_text("✅ Скрипт_5 (уход домой) выполнен")
         elif script_num == '6':
-            await script_6(context)
-            await update.message.reply_text("✅ Скрипт_6 (информирование) выполнен")
+            script_6(context.bot)
+            update.message.reply_text("✅ Скрипт_6 (информирование) выполнен")
         elif script_num == 'all':
             script_1()
             script_2()
             script_3()
             script_4()
             script_5()
-            await script_6(context)
-            await update.message.reply_text("✅ Все скрипты выполнены")
+            script_6(context.bot)
+            update.message.reply_text("✅ Все скрипты выполнены")
         else:
-            await update.message.reply_text("❌ Неизвестный скрипт. Используйте: /run_script <1-6|all>")
+            update.message.reply_text("❌ Неизвестный скрипт. Используйте: /run_script <1-6|all>")
     else:
-        await update.message.reply_text("Использование: /run_script <номер_скрипта>\n1-прирост кофе, 2-поиск дежурного, 3-обнуление печальки, 4-погашение дежурства, 5-уход домой, 6-информирование, all-все")
+        update.message.reply_text("Использование: /run_script <номер_скрипта>\n1-прирост кофе, 2-поиск дежурного, 3-обнуление печальки, 4-погашение дежурства, 5-уход домой, 6-информирование, all-все")
 
 # =========== ФУНКЦИИ ПЛАНИРОВЩИКА ===========
-async def daily_13_job(context: ContextTypes.DEFAULT_TYPE):
-    """Выполняется в 13:00 с понедельника по пятницу"""
+def daily_13_job(context):
+    """Выполняется в 13:00 UTC с понедельника по пятницу"""
     if not SCRIPTS_ENABLED:
         logger.info("⏸️ Скрипты отключены, пропускаем выполнение в 13:00")
         return
@@ -632,15 +626,15 @@ async def daily_13_job(context: ContextTypes.DEFAULT_TYPE):
     logger.info("⏰ Запуск скриптов 13:00 (UTC)")
     script_1()  # Скрипт_1 (прирост кофе)
     script_2()  # Скрипт_2 (поиск дежурного)
-    await script_6(context)  # Скрипт_6 (информирование)
+    script_6(context.job.context)  # Скрипт_6 (информирование)
 
-async def daily_21_job(context: ContextTypes.DEFAULT_TYPE):
-    """Выполняется в 21:00 с понедельника по пятницу"""
+def daily_20_job(context):
+    """Выполняется в 20:00 UTC с понедельника по пятницу"""
     if not SCRIPTS_ENABLED:
-        logger.info("⏸️ Скрипты отключены, пропускаем выполнение в 21:00")
+        logger.info("⏸️ Скрипты отключены, пропускаем выполнение в 20:00")
         return
     
-    logger.info("⏰ Запуск скриптов 21:00 (UTC)")
+    logger.info("⏰ Запуск скриптов 20:00 (UTC)")
     script_3()  # Скрипт_3 (обнуление Печальки)
     script_4()  # Скрипт_4 (погашение дежурства)
     script_5()  # Скрипт_5 (уход домой неполнозанятых)
@@ -656,15 +650,21 @@ def main():
     SCRIPTS_ENABLED = get_scripts_enabled()
     logger.info(f"✅ Статус скриптов: {'ВКЛЮЧЕНЫ' if SCRIPTS_ENABLED else 'ОТКЛЮЧЕНЫ'}")
     
-    # Создание приложения (версия 20.7)
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Создание Updater (старый стиль для версии 13.x)
+    updater = Updater(token=BOT_TOKEN, use_context=True)
+    
+    # Получаем диспетчер для регистрации обработчиков
+    dp = updater.dispatcher
+    
+    # Получаем JobQueue для планирования задач
+    job_queue = updater.job_queue
     
     # Настройка ConversationHandler
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             REGISTRATION: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, registration)
+                MessageHandler(Filters.text & ~Filters.command, registration)
             ],
             POLL: [
                 CallbackQueryHandler(poll_handler)
@@ -680,34 +680,33 @@ def main():
     )
     
     # Добавление обработчиков команд
-    application.add_handler(conv_handler)
-    application.add_handler(CommandHandler('status', status))
-    application.add_handler(CommandHandler('hollidaon', hollidaon))
-    application.add_handler(CommandHandler('hollidayoff', hollidayoff))
-    application.add_handler(CommandHandler('run_script', run_script))
+    dp.add_handler(conv_handler)
+    dp.add_handler(CommandHandler('status', status))
+    dp.add_handler(CommandHandler('hollidaon', hollidaon))
+    dp.add_handler(CommandHandler('hollidayoff', hollidayoff))
+    dp.add_handler(CommandHandler('run_script', run_script))
     
     # Настройка планировщика задач
-    job_queue = application.job_queue
-    
     if job_queue:
         # Понедельник-пятница в 13:00 UTC
         job_queue.run_daily(
             daily_13_job,
             time=time(hour=13, minute=0, second=0),
             days=(0, 1, 2, 3, 4),  # Пн=0, Пт=4
-            name="daily_13_job"
+            context=updater.bot
         )
         
-        # Понедельник-пятница в 21:00 UTC
+        # Понедельник-пятница в 20:00 UTC
         job_queue.run_daily(
-            daily_21_job,
-            time=time(hour=21, minute=0, second=0),
+            daily_20_job,
+            time=time(hour=20, minute=0, second=0),
             days=(0, 1, 2, 3, 4),
-            name="daily_21_job"
+            context=updater.bot
         )
         
         logger.info("✅ Планировщик скриптов настроен")
-        logger.info("⏰ Расписание (UTC): Пн-Пт 13:00 (скрипты 1,2,6) и 21:00 (скрипты 3,4,5)")
+        logger.info("⏰ Расписание (UTC): Пн-Пт 13:00 (скрипты 1,2,6) и 20:00 (скрипты 3,4,5)")
+        logger.info("⏰ По Москве (UTC+3): Пн-Пт 16:00 и 23:00")
     
     # Запуск бота
     logger.info("✅ Бот запущен и готов к работе!")
@@ -718,10 +717,11 @@ def main():
     logger.info("  /hollidayoff - включить автоскрипты")
     logger.info("  /run_script <номер> - запустить скрипт вручную")
     
-    application.run_polling(
-        drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES
-    )
+    # Запускаем поллинг
+    updater.start_polling()
+    
+    # Ожидаем завершения
+    updater.idle()
 
 if __name__ == '__main__':
     main()
