@@ -495,7 +495,8 @@ def poll_handler(update: Update, context):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         query.edit_message_text(
-            "✅ Теперь вам будет приходить уведомления кто сегодня дежурный",
+            "✅ Теперь вам будет приходить уведомления кто сегодня дежурный\n\n"
+            "Выберите действие:",
             reply_markup=reply_markup
         )
         return MAIN_COFFEE
@@ -513,7 +514,8 @@ def poll_handler(update: Update, context):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         query.edit_message_text(
-            "⏰ Когда вы придете, отметьтесь",
+            "⏰ Когда вы придете, отметьтесь\n\n"
+            "Выберите действие:",
             reply_markup=reply_markup
         )
         return RARE_COFFEE
@@ -526,6 +528,15 @@ def main_coffee_handler(update: Update, context):
     user_id = update.effective_user.id
     data = query.data
     
+    # Создаем клавиатуру для главных кофеманов
+    keyboard = [
+        [InlineKeyboardButton("Я некоторое время не пью кофе", callback_data='temp_no_coffee')],
+        [InlineKeyboardButton("Я дежурный, но не смогу вымыть кофемашинку", callback_data='cant_duty')],
+        [InlineKeyboardButton("Я Вернулся", callback_data='returned')],
+        [InlineKeyboardButton("Я теперь пью кофе по другому", callback_data='change_habit')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     if data == 'temp_no_coffee':
         # Присваивает 1 в wait_1
         update_user(user_id, wait_1=1)
@@ -533,8 +544,14 @@ def main_coffee_handler(update: Update, context):
             chat_id=user_id,
             text="⏸️ Когда вы вернетесь отметьте это"
         )
-        query.edit_message_text("✅ Вы отметили временное отсутствие")
-        
+        # Оставляем меню с обновленным текстом
+        query.edit_message_text(
+            "✅ Вы отметили временное отсутствие\n\n"
+            "Выберите действие:",
+            reply_markup=reply_markup
+        )
+        return MAIN_COFFEE
+    
     elif data == 'cant_duty':
         # Присваивает 1 в wait_2 и 0 в count_2
         update_user(user_id, wait_2=1, count_2=0)
@@ -545,7 +562,13 @@ def main_coffee_handler(update: Update, context):
         # Запускаем Скрипт_2 и скрипт_6
         script_2()
         script_6()
-        query.edit_message_text("✅ Отказ от дежурства учтен")
+        # Оставляем меню
+        query.edit_message_text(
+            "✅ Отказ от дежурства учтен\n\n"
+            "Выберите действие:",
+            reply_markup=reply_markup
+        )
+        return MAIN_COFFEE
         
     elif data == 'returned':
         # Присваивает 0 в wait_1
@@ -554,25 +577,32 @@ def main_coffee_handler(update: Update, context):
             chat_id=user_id,
             text="🎉 Ура!"
         )
-        query.edit_message_text("✅ Вы вернулись!")
+        # Оставляем меню
+        query.edit_message_text(
+            "✅ Вы вернулись!\n\n"
+            "Выберите действие:",
+            reply_markup=reply_markup
+        )
+        return MAIN_COFFEE
         
     elif data == 'change_habit':
         # Переход на экран "Опрос"
-        keyboard = [
+        poll_keyboard = [
             [
                 InlineKeyboardButton("Каждый день", callback_data='daily'),
                 InlineKeyboardButton("Я тут не каждый день", callback_data='rarely')
             ],
             [InlineKeyboardButton("Я теперь НЕ пью кофе", callback_data='no_coffee')]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        poll_reply_markup = InlineKeyboardMarkup(poll_keyboard)
         
         query.edit_message_text(
             "☕ Как часто вы пьете кофе?",
-            reply_markup=reply_markup
+            reply_markup=poll_reply_markup
         )
         return POLL
     
+    # Если ничего не выбрано, оставляем меню как есть
     return MAIN_COFFEE
 
 def rare_coffee_handler(update: Update, context):
@@ -582,6 +612,14 @@ def rare_coffee_handler(update: Update, context):
     
     user_id = update.effective_user.id
     data = query.data
+    
+    # Создаем клавиатуру для редких кофеманов
+    keyboard = [
+        [InlineKeyboardButton("Я сегодня пью кофе", callback_data='today_coffee')],
+        [InlineKeyboardButton("Я дежурный, но не смогу вымыть кофемашинку", callback_data='cant_duty_rare')],
+        [InlineKeyboardButton("Я теперь пью кофе по другому", callback_data='change_habit_rare')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
     if data == 'today_coffee':
         # Добавляет 1 в count_1, присваивает 0 в wait_1
@@ -593,7 +631,13 @@ def rare_coffee_handler(update: Update, context):
             chat_id=user_id,
             text="✅ Спасибо"
         )
-        query.edit_message_text("✅ Ваше присутствие отмечено")
+        # Оставляем меню
+        query.edit_message_text(
+            "✅ Ваше присутствие отмечено\n\n"
+            "Выберите действие:",
+            reply_markup=reply_markup
+        )
+        return RARE_COFFEE
         
     elif data == 'cant_duty_rare':
         # Присваивает 1 в wait_2 и 0 в count_2
@@ -605,25 +649,32 @@ def rare_coffee_handler(update: Update, context):
         # Запускаем Скрипт_2 и скрипт_6
         script_2()
         script_6()
-        query.edit_message_text("✅ Отказ от дежурства учтен")
+        # Оставляем меню
+        query.edit_message_text(
+            "✅ Отказ от дежурства учтен\n\n"
+            "Выберите действие:",
+            reply_markup=reply_markup
+        )
+        return RARE_COFFEE
         
     elif data == 'change_habit_rare':
         # Переход на экран "Опрос"
-        keyboard = [
+        poll_keyboard = [
             [
                 InlineKeyboardButton("Каждый день", callback_data='daily'),
                 InlineKeyboardButton("Я тут не каждый день", callback_data='rarely')
             ],
             [InlineKeyboardButton("Я теперь НЕ пью кофе", callback_data='no_coffee')]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        poll_reply_markup = InlineKeyboardMarkup(poll_keyboard)
         
         query.edit_message_text(
             "☕ Как часто вы пьете кофе?",
-            reply_markup=reply_markup
+            reply_markup=poll_reply_markup
         )
         return POLL
     
+    # Если ничего не выбрано, оставляем меню как есть
     return RARE_COFFEE
 
 def cancel(update: Update, context):
@@ -659,7 +710,7 @@ def status(update: Update, context):
 ☕ Чашек: {user['count_1']}
 🎖️ Дежурств: {user['count_2']}
 🚫 Отсутствие: {'Да' if user['wait_1'] else 'Нет'}
-😔 Печалька: {'Да' if user['wait_2'] else 'Нет'}
+😔 Не могу, Печалька: {'Да' if user['wait_2'] else 'Нет'}
 👑 Сегодняшний дежурный: {duty_text}
 ⚙️ Автоскрипты: {'ВКЛЮЧЕНЫ' if SCRIPTS_ENABLED else 'ОТКЛЮЧЕНЫ'}
         """
